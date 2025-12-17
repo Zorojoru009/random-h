@@ -1,0 +1,16 @@
+# Core ML Dependencies
+diffusers>=0.25.0
+transformers>=4.36.0
+accelerate>=0.25.0
+safetensors>=0.4.1
+torch>=2.1.0
+huggingface_hub>=0.20.0
+
+# API Server Dependencies
+fastapi>=0.108.0
+uvicorn[standard]>=0.25.0
+pydantic>=2.5.0
+python-multipart>=0.0.6
+
+# Image Processing
+Pillow>=10.1.0
