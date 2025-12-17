@@ -100,19 +100,22 @@ Visit `http://localhost:8000/docs` for interactive API documentation.
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `prompts` | `string[]` | ✅ Yes | List of text descriptions (1-10) |
+| `prompts` | `string[]` | ✅ Yes | List of text descriptions (1-150) |
 | `negative_prompt` | `string` | ❌ No | What to avoid in images |
+| `num_images_per_prompt` | `integer` | ❌ No | Variations per prompt (default 1, max 50) |
 | `return_format` | `string` | ❌ No | `"base64"` or `"url"` (default: `"base64"`) |
+
+*Note: Total images (prompts × num_images_per_prompt) cannot exceed 150.*
 
 #### Example Request
 
 ```json
 {
   "prompts": [
-    "baroque oil painting, dramatic chiaroscuro lighting, a massive disembodied eye made of fire, non-human, symbolic",
-    "baroque oil painting, dramatic chiaroscuro lighting, a golden crown floating in a dark void, divine light"
+    "baroque oil painting, dramatic chiaroscuro lighting, a massive disembodied eye made of fire"
   ],
-  "negative_prompt": "modern, photograph, low quality, blurry",
+  "num_images_per_prompt": 4,
+  "negative_prompt": "modern, photograph, low quality",
   "return_format": "base64"
 }
 ```

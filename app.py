@@ -15,12 +15,36 @@ import traceback
 from PIL import Image
 
 # Import our image generation function
-from base import generate_baroque_image
+# Import our image generation function
+from base import generate_baroque_image, load_pipeline
+from contextlib import asynccontextmanager
+
+# Global variable for the model
+ml_models = {}
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Load the ML model
+    print("🏗️ Pre-loading SDXL Lightning model on startup...")
+    try:
+        from base import load_pipeline
+        ml_models["pipe"] = load_pipeline()
+        print("✅ Model loaded successfully!")
+    except Exception as e:
+        print(f"❌ Failed to load model: {e}")
+        print(traceback.format_exc())
+    yield
+    # Clean up the ML models and release the resources
+    ml_models.clear()
+    import torch
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
 
 app = FastAPI(
     title="SDXL Lightning API",
     description="High-quality Baroque image generation using SDXL Lightning 8-step UNet",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 # Enable CORS for web clients
@@ -32,13 +56,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Global variable to cache the model (loaded once on first request)
-_model_loaded = False
+
 
 class GenerateRequest(BaseModel):
     """Request model for image generation"""
-    prompts: List[str] = Field(..., description="List of text prompts for image generation", min_items=1, max_items=10)
+    prompts: List[str] = Field(..., description="List of text prompts for image generation", min_items=1, max_items=150)
     negative_prompt: Optional[str] = Field("", description="Negative prompt to guide what to avoid")
+    num_images_per_prompt: Optional[int] = Field(1, description="Number of images to generate per prompt (default: 1)", ge=1, le=50)
     return_format: Optional[str] = Field("base64", description="Response format: 'base64' or 'url'")
     
     class Config:
@@ -88,28 +112,37 @@ async def generate_images(request: GenerateRequest):
     """
     Generate baroque-style images using SDXL Lightning.
     
-    - **prompts**: List of text descriptions (1-10 prompts)
+    - **prompts**: List of text descriptions (1-150 prompts)
     - **negative_prompt**: What to avoid in the image
+    - **num_images_per_prompt**: How many variations per prompt (1-50)
     - **return_format**: 'base64' returns base64-encoded PNG, 'url' returns file paths
     
     Returns a list of generated images in the specified format.
     """
-    global _model_loaded
-    
     try:
         # Validate inputs
-        if len(request.prompts) > 10:
-            raise HTTPException(status_code=400, detail="Maximum 10 prompts allowed per request")
+        total_images = len(request.prompts) * request.num_images_per_prompt
+        if total_images > 150:
+             raise HTTPException(status_code=400, detail=f"Total images ({total_images}) exceeds limit of 150 per request")
         
-        # Generate images (model will be loaded on first call)
-        if not _model_loaded:
-            print("Loading SDXL Lightning model (first time)... This may take a minute.")
-            _model_loaded = True
+        # Expand prompts if num_images_per_prompt > 1
+        expanded_prompts = []
+        for prompt in request.prompts:
+            expanded_prompts.extend([prompt] * request.num_images_per_prompt)
+        
+        # Get pre-loaded model
+        pipe = ml_models.get("pipe")
+        if not pipe:
+            print("⚠️ Model not pre-loaded, loading now...")
+            pipe = load_pipeline()
+            ml_models["pipe"] = pipe
+        
         
         images = generate_baroque_image(
-            prompts=request.prompts,
+            prompts=expanded_prompts,
             negative_prompt=request.negative_prompt,
-            save_to_disk=False  # Don't save to disk for API
+            save_to_disk=False,  # Don't save to disk for API
+            pipe=pipe
         )
         
         # Convert images based on requested format

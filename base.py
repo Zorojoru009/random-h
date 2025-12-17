@@ -15,28 +15,16 @@ BASE_MODEL = "stabilityai/stable-diffusion-xl-base-1.0"
 LIGHTNING_REPO = "ByteDance/SDXL-Lightning"
 LIGHTNING_CKPT = "sdxl_lightning_8step_unet.safetensors" # 8-step UNet for MAXIMUM QUALITY
 
-def generate_baroque_image(prompts, negative_prompt="", output_prefix="output", save_to_disk=True):
+def load_pipeline():
     """
-    Generates Baroque-style images using SDXL Lightning (MAX QUALITY).
-    Using 8-step UNet checkpoint with guidance_scale=0 for best quality.
-    Locked to 16:9 aspect ratio (1024x576).
-    Args:
-        prompts: A single string or a list of strings.
-        negative_prompt: Universal negative prompt.
-        output_prefix: Prefix for saved filenames.
-        save_to_disk: Whether to save images to disk (default True).
-    Returns:
-        List of PIL Image objects.
+    Loads the SDXL Lightning pipeline and returns it.
+    Useful for preloading the model.
     """
-    
-    if isinstance(prompts, str):
-        prompts = [prompts]
-
     # Load UNet checkpoint (better quality than LoRA)
     print("Loading SDXL Lightning 8-step UNet for maximum quality...")
     unet = UNet2DConditionModel.from_config(BASE_MODEL, subfolder="unet").to("cuda", torch.float16)
     unet.load_state_dict(load_file(hf_hub_download(LIGHTNING_REPO, LIGHTNING_CKPT), device="cuda"))
-    
+            
     # Load Pipeline with custom UNet
     pipe = StableDiffusionXLPipeline.from_pretrained(
         BASE_MODEL, 
@@ -50,6 +38,29 @@ def generate_baroque_image(prompts, negative_prompt="", output_prefix="output", 
         pipe.scheduler.config, 
         timestep_spacing="trailing"
     )
+    
+    return pipe
+
+def generate_baroque_image(prompts, negative_prompt="", output_prefix="output", save_to_disk=True, pipe=None):
+    """
+    Generates Baroque-style images using SDXL Lightning (MAX QUALITY).
+    Using 8-step UNet checkpoint with guidance_scale=0 for best quality.
+    Locked to 16:9 aspect ratio (1024x576).
+    Args:
+        prompts: A single string or a list of strings.
+        negative_prompt: Universal negative prompt.
+        output_prefix: Prefix for saved filenames.
+        save_to_disk: Whether to save images to disk (default True).
+        pipe: Optional pre-loaded pipeline. If None, loads a new one.
+    Returns:
+        List of PIL Image objects.
+    """
+    
+    if isinstance(prompts, str):
+        prompts = [prompts]
+
+    if pipe is None:
+        pipe = load_pipeline()
 
     print(f"Generating {len(prompts)} images...")
     
