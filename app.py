@@ -147,11 +147,93 @@ async def generate_images(request: GenerateRequest):
 
 if __name__ == "__main__":
     import uvicorn
+    import subprocess
+    import threading
+    import time
     
     # Get port from environment (Kaggle uses different ports)
     port = int(os.getenv("PORT", 8000))
+    use_public = os.getenv("USE_PUBLIC", "false").lower() == "true"
     
-    print(f"Starting SDXL Lightning API server on port {port}...")
-    print(f"API Documentation: http://localhost:{port}/docs")
+    print("="*70)
+    print("🚀 SDXL Lightning API Server")
+    print("="*70)
     
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    # Setup zrok if enabled (for public access)
+    zrok_process = None
+    if use_public:
+        try:
+            print("🔧 Setting up zrok tunnel...")
+            
+            # Start zrok share in background
+            # zrok share runs as: zrok share public http://localhost:PORT
+            zrok_cmd = ["zrok", "share", "public", f"http://localhost:{port}", "--headless"]
+            zrok_process = subprocess.Popen(
+                zrok_cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                bufsize=1
+            )
+            
+            # Wait and parse output for the public URL
+            print("⏳ Waiting for zrok tunnel to establish...")
+            time.sleep(3)
+            
+            # Try to get the URL from zrok status
+            try:
+                status_result = subprocess.run(
+                    ["zrok", "status"],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+                
+                # Parse the URL from status output
+                for line in status_result.stdout.split('\n'):
+                    if 'https://' in line:
+                        public_url = line.strip().split()[-1]
+                        if public_url.startswith('https://'):
+                            print(f"✅ zrok tunnel created!")
+                            print(f"🌐 Public URL: {public_url}")
+                            print(f"📚 Public API Docs: {public_url}/docs")
+                            print(f"🔗 Share this URL to access your API from anywhere!")
+                            break
+                else:
+                    print(f"✅ zrok tunnel started (check 'zrok status' for URL)")
+                    
+            except Exception as e:
+                print(f"⚠️ zrok started but couldn't get URL automatically")
+                print(f"   Run 'zrok status' to see your public URL")
+            
+            print("="*70)
+            
+        except FileNotFoundError:
+            print("⚠️  zrok not found. Please install zrok:")
+            print("    Visit: https://zrok.io/download")
+            print("    Or run: curl -sSLf https://get.zrok.io | bash")
+            print("    Then enable: zrok enable YOUR_TOKEN")
+            print("    Running in local-only mode...")
+            print("="*70)
+            use_public = False
+        except Exception as e:
+            print(f"⚠️  Could not start zrok: {str(e)}")
+            print("    Running in local-only mode...")
+            print("="*70)
+            use_public = False
+    
+    if not use_public:
+        print(f"📍 Local URL: http://localhost:{port}")
+        print(f"📚 API Documentation: http://localhost:{port}/docs")
+        print(f"💡 Tip: Set USE_PUBLIC=true for public access via zrok")
+        print("="*70)
+    
+    try:
+        print("Starting server...")
+        uvicorn.run(app, host="0.0.0.0", port=port)
+    finally:
+        # Cleanup zrok process on shutdown
+        if zrok_process:
+            print("\n🛑 Shutting down zrok tunnel...")
+            zrok_process.terminate()
+            zrok_process.wait(timeout=5)
