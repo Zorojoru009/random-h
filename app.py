@@ -138,10 +138,15 @@ async def generate_images(request: GenerateRequest):
             ml_models["pipe"] = pipe
         
         
-        images = generate_baroque_image(
+        from starlette.concurrency import run_in_threadpool
+        
+        # Run generation in a separate thread to avoid blocking the server loop
+        # This keeps the API responsive and prevents zrok/ngrok from timing out
+        images = await run_in_threadpool(
+            generate_baroque_image,
             prompts=expanded_prompts,
             negative_prompt=request.negative_prompt,
-            save_to_disk=False,  # Don't save to disk for API
+            save_to_disk=False,
             pipe=pipe
         )
         
