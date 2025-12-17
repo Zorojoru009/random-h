@@ -161,50 +161,57 @@ if __name__ == "__main__":
     
     # Setup zrok if enabled (for public access)
     zrok_process = None
+    public_url = None
+    
     if use_public:
         try:
             print("🔧 Setting up zrok tunnel...")
             
-            # Start zrok share in background
-            # zrok share runs as: zrok share public http://localhost:PORT
+            # Start zrok share - it outputs the URL directly to stdout
             zrok_cmd = ["zrok", "share", "public", f"http://localhost:{port}", "--headless"]
             zrok_process = subprocess.Popen(
                 zrok_cmd,
                 stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
                 text=True,
                 bufsize=1
             )
             
-            # Wait and parse output for the public URL
+            # Read output to get the public URL
             print("⏳ Waiting for zrok tunnel to establish...")
-            time.sleep(3)
             
-            # Try to get the URL from zrok status
-            try:
-                status_result = subprocess.run(
-                    ["zrok", "status"],
-                    capture_output=True,
-                    text=True,
-                    timeout=5
-                )
+            # Give zrok time to start and read its output
+            import select
+            timeout = 15  # seconds
+            start_time = time.time()
+            
+            while time.time() - start_time < timeout:
+                # Check if process is still running
+                if zrok_process.poll() is not None:
+                    print("⚠️ zrok process exited unexpectedly")
+                    break
                 
-                # Parse the URL from status output
-                for line in status_result.stdout.split('\n'):
-                    if 'https://' in line:
-                        public_url = line.strip().split()[-1]
-                        if public_url.startswith('https://'):
+                # Read available output
+                line = zrok_process.stdout.readline()
+                if line:
+                    # Look for the URL in the output
+                    if 'https://' in line and 'share.zrok.io' in line:
+                        # Extract URL from line
+                        import re
+                        url_match = re.search(r'https://[^\s]+share\.zrok\.io', line)
+                        if url_match:
+                            public_url = url_match.group(0)
                             print(f"✅ zrok tunnel created!")
                             print(f"🌐 Public URL: {public_url}")
                             print(f"📚 Public API Docs: {public_url}/docs")
                             print(f"🔗 Share this URL to access your API from anywhere!")
                             break
-                else:
-                    print(f"✅ zrok tunnel started (check 'zrok status' for URL)")
-                    
-            except Exception as e:
-                print(f"⚠️ zrok started but couldn't get URL automatically")
-                print(f"   Run 'zrok status' to see your public URL")
+                
+                time.sleep(0.5)
+            
+            if not public_url:
+                print(f"⚠️ zrok started but couldn't detect URL automatically")
+                print(f"   The tunnel should still be running - check logs above")
             
             print("="*70)
             
