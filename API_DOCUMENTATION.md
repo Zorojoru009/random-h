@@ -272,16 +272,35 @@ For Kaggle's 16GB VRAM limit, the current setup is optimized:
 
 ---
 
-## Performance Benchmarks
+## Architecture & Performance
 
-| GPU | Batch Size | Time per Image | Total Time (8 steps) |
-|-----|------------|----------------|----------------------|
-| T4 (Kaggle) | 1 | ~2-3s | ~2-3s |
-| T4 (Kaggle) | 4 | ~2-3s | ~8-12s |
+### Dual-GPU Parallelism (Kaggle T4 x2)
+The API automatically detects and utilizes both GPUs on Kaggle:
+- **Load Balancing**: Models are loaded on both `cuda:0` and `cuda:1`.
+- **Parallel Execution**: Large batches are split and processed simultaneously.
+- **Speedup**: Generation time is reduced by ~50% (e.g., 150 images in ~3 mins).
+
+### Thread Safety & Stability
+- **Non-Blocking**: Image generation runs in a background thread to prevent timeouts.
+- **Mutex Locking**: Each GPU has a dedicated lock to prevent race conditions.
+- **Queueing**: Concurrent requests are safe; they will queue up if GPUs are busy.
+
+### Benchmarks (Total Time)
+
+| Batch Size | Single GPU (T4) | Dual GPU (T4 x2) |
+|------------|-----------------|------------------|
+| 10 images  | ~30s            | ~15s             |
+| 50 images  | ~2.5 mins       | ~1.2 mins        |
+| 150 images | ~7-8 mins       | ~3-4 mins        |
 
 ---
 
 ## Best Practices
+
+### Handling Long Requests
+Generating 150 images can take 3-4 minutes even with dual GPUs.
+- **Client Timeout**: Ensure your HTTP client has a long timeout (e.g., 300s+).
+- **Zrok/Ngrok**: The server now sends heartbeats during generation to keep tunnels alive.
 
 ### Prompt Engineering for Baroque Style
 

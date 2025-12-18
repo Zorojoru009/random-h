@@ -15,15 +15,17 @@ BASE_MODEL = "stabilityai/stable-diffusion-xl-base-1.0"
 LIGHTNING_REPO = "ByteDance/SDXL-Lightning"
 LIGHTNING_CKPT = "sdxl_lightning_8step_unet.safetensors" # 8-step UNet for MAXIMUM QUALITY
 
-def load_pipeline():
+def load_pipeline(device="cuda"):
     """
     Loads the SDXL Lightning pipeline and returns it.
-    Useful for preloading the model.
+    Useful for preloading the model on a specific GPU.
+    Args:
+        device: Device to load the model on (e.g., "cuda:0", "cuda:1").
     """
     # Load UNet checkpoint (better quality than LoRA)
-    print("Loading SDXL Lightning 8-step UNet for maximum quality...")
-    unet = UNet2DConditionModel.from_config(BASE_MODEL, subfolder="unet").to("cuda", torch.float16)
-    unet.load_state_dict(load_file(hf_hub_download(LIGHTNING_REPO, LIGHTNING_CKPT), device="cuda"))
+    print(f"Loading SDXL Lightning 8-step UNet on {device}...")
+    unet = UNet2DConditionModel.from_config(BASE_MODEL, subfolder="unet").to(device, torch.float16)
+    unet.load_state_dict(load_file(hf_hub_download(LIGHTNING_REPO, LIGHTNING_CKPT), device=device))
             
     # Load Pipeline with custom UNet
     pipe = StableDiffusionXLPipeline.from_pretrained(
@@ -31,7 +33,7 @@ def load_pipeline():
         unet=unet,
         torch_dtype=torch.float16, 
         variant="fp16"
-    ).to("cuda")
+    ).to(device)
 
     # Configure Scheduler for Lightning
     pipe.scheduler = EulerDiscreteScheduler.from_config(
