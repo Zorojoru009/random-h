@@ -3,6 +3,11 @@ FastAPI server for SDXL Lightning Image Generation
 Optimized for Kaggle environment with GPU support
 """
 
+import os
+# Fix for protobuf error often seen on Kaggle: 
+# AttributeError: 'MessageFactory' object has no attribute 'GetPrototype'
+os.environ["PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION"] = "python"
+
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -88,12 +93,76 @@ async def lifespan(app: FastAPI):
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
 
-# ... (app definition)
+app = FastAPI(
+    title="SDXL Lightning API",
+    description="High-quality Baroque image generation using SDXL Lightning 8-step UNet (Multi-GPU)",
+    version="2.0.0",
+    lifespan=lifespan
+)
+
+# Enable CORS for web clients
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+class GenerateRequest(BaseModel):
+    """Request model for image generation"""
+    prompts: List[str] = Field(..., description="List of text prompts for image generation", min_items=1, max_items=150)
+    negative_prompt: Optional[str] = Field("", description="Negative prompt to guide what to avoid")
+    num_images_per_prompt: Optional[int] = Field(1, description="Number of images to generate per prompt (default: 1)", ge=1, le=50)
+    return_format: Optional[str] = Field("base64", description="Response format: 'base64' or 'url'")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "prompts": [
+                    "baroque oil painting, dramatic chiaroscuro lighting, a massive disembodied eye made of fire, non-human, symbolic"
+                ],
+                "negative_prompt": "modern, photograph, low quality, blurry",
+                "return_format": "base64"
+            }
+        }
+
+class GenerateResponse(BaseModel):
+    """Response model for image generation"""
+    success: bool
+    images: List[str]
+    count: int
+    message: str
+
+@app.get("/")
+async def root():
+    """Root endpoint with API information"""
+    return {
+        "name": "SDXL Lightning API",
+        "version": "1.0.0",
+        "status": "running",
+        "endpoints": {
+            "generate": "/generate - POST - Generate baroque images from prompts",
+            "health": "/health - GET - Health check",
+            "docs": "/docs - GET - API documentation"
+        }
+    }
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint"""
+    import torch
+    return {
+        "status": "healthy",
+        "cuda_available": torch.cuda.is_available(),
+        "cuda_device": torch.cuda.get_device_name(0) if torch.cuda.is_available() else "N/A"
+    }
 
 @app.post("/generate", response_model=GenerateResponse)
 async def generate_images(request: GenerateRequest):
-    # ... (validation logic)
-    
+    """
+    Generate baroque-style images using SDXL Lightning.
+    """
     try:
         # Validate inputs
         total_images = len(request.prompts) * request.num_images_per_prompt
@@ -107,6 +176,7 @@ async def generate_images(request: GenerateRequest):
         
         # Split prompts for parallel processing if we have multiple models
         import torch
+        from starlette.concurrency import run_in_threadpool
         num_models = len(manager.models)
         
         # If we have multiple models and enough prompts, split the work
